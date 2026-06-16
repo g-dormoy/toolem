@@ -8,10 +8,10 @@ AI-powered team intelligence for engineering management. Claude agents pull from
 
 ### 1. Obsidian (required)
 
-Open the `vault/` folder as an **Obsidian vault**. This is where all data lives — Daily notes, Snapshots, People logs, Project notes.
+Create/Open the `vault/` folder as an **Obsidian vault**. This is where all data lives — Daily notes, Snapshots, People logs, Project notes.
 
 - Install [Obsidian](https://obsidian.md) (free).
-- Open → select the `vault/` folder inside this repo.
+- Create/Open → select the `vault/` folder inside this repo.
 - Install the community plugin **Dataview** (Settings → Community plugins → Browse → "Dataview"). It powers the live queries in `vault/_meta/Views.md`.
 
 Without Obsidian + Dataview, the data still accumulates correctly (it's plain Markdown + YAML frontmatter), but you lose the graph view, backlinks, and live dashboards.
