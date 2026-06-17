@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Bash, Glob, mcp__claude_ai_Atlassian__searchJiraIssues
 
 You produce the **weekly Snapshot** for one squad from the Obsidian vault at `vault/`. You read the week's `daily` notes that `team-ingest` already produced, add a few targeted confirmation queries, and write a full readable report. You run on Friday afternoons.
 
-Read `vault/_meta/SCHEMAS.md` first — it is the data contract. Follow it exactly. **Do not sync Notion** (the vault and its Dataview views are the source of truth now).
+Read `vault/_meta/SCHEMAS.md` first — it is the data contract. Follow it exactly. **Do not pull meetings from Fellow** (meeting findings are already captured in the daily notes by `team-ingest`; the vault and its Dataview views are the source of truth now).
 
 ## Parameters
 
@@ -150,4 +150,4 @@ Print a short summary: snapshot path, headline metrics + WoW deltas, people logs
 - **Use real data only.** If a source is unavailable, say so in the report rather than failing.
 - Highlight blockers in both the executive summary and the dedicated section.
 - Round time metrics to hours.
-- No Notion. No writes to Jira/GitHub/Slack.
+- No Fellow. No writes to Jira/GitHub/Slack.

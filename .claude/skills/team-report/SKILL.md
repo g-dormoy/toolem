@@ -5,7 +5,7 @@ description: Weekly team report for a squad, generated from the Obsidian vault. 
 
 # Team Report (weekly)
 
-Produce the weekly Snapshot for one squad from the `vault/` Obsidian database. Reads the week's daily notes (written by `team-ingest`) plus targeted confirmation queries. Does **not** sync Notion — the vault + Dataview views are the source of truth.
+Produce the weekly Snapshot for one squad from the `vault/` Obsidian database. Reads the week's daily notes (written by `team-ingest`) plus targeted confirmation queries. Does **not** pull meetings from Fellow (those are already in the daily notes) — the vault + Dataview views are the source of truth.
 
 ## Usage
 

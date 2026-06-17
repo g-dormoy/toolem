@@ -67,6 +67,9 @@ slack:
   problem: "#problem-yourmetric"
   other: ["#optional-extra-channel"]
 people: ["[[Person One]]", "[[Person Two]]"]   # roster
+# --- optional: Fellow meeting discovery (title patterns; defaults to team `name` if omitted) ---
+fellow:
+  meeting_titles: ["YourTeam DSM", "YourTeam"]   # patterns matched against Fellow meeting titles
 # --- optional: lead-time workflow tuning (defaults apply if omitted) ---
 workflow:
   active_start: [In Progress]    # ← CONFIGURE: your Jira "work started" status
@@ -76,6 +79,8 @@ workflow:
 ```
 
 The `workflow` block tunes the lead-time model (see **Lead time & cycle time** below). If omitted: `active_start` defaults to the first transition into a status named "In Progress" (else the first `statusCategory: indeterminate`), `done` to any `statusCategory: done`.
+
+The optional `fellow.meeting_titles` block lists the title patterns `team-ingest` uses to find this squad's meetings in Fellow (e.g. the recurring standup title plus the squad name). Fellow has no per-squad channels, so discovery is by title + date; if omitted, ingest falls back to searching by the team `name`.
 
 ---
 
@@ -177,9 +182,9 @@ One row per ticket that reached Done today. `Kind` = deliverable (Story/Task/Bug
 | [ENG-002](url) | subtask | [[Person One]] | 1.2 | In Progress 1.2 |
 
 ## Meeting Notes
-_Omit this section entirely if no Notion meeting notes were found for today._
+_Omit this section entirely if no Fellow meetings were found for today. Findings are sourced from Fellow (summaries / decisions / action items) and normalised to English._
 
-### Daily standup — YYYY-MM-DD
+### Daily standup — YYYY-MM-DD — [Fellow](https://fellow.link/…)
 - Attendees: [[Person One]], [[Person Two]]
 - **Decisions:** …
 - **Blockers / risks:** …

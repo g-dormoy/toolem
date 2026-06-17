@@ -1,7 +1,7 @@
 ---
 name: team-ingest
-description: Daily sync that keeps the Obsidian vault current for a squad. Pulls the day's Jira, GitHub, Slack, and Notion meeting notes, refreshes Project notes, and writes a daily metrics note. Idempotent by date. Does NOT produce the weekly report (that is team-report).
-tools: Read, Write, Edit, Bash, Glob, mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql, mcp__claude_ai_Atlassian__getJiraIssue, mcp__claude_ai_Atlassian__getVisibleJiraProjects, mcp__claude_ai_Atlassian__lookupJiraAccountId, mcp__claude_ai_Atlassian__atlassianUserInfo, mcp__claude_ai_Atlassian__getAccessibleAtlassianResources, mcp__claude_ai_Atlassian__search, mcp__claude_ai_Slack__slack_read_channel, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_search_channels, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_search_public_and_private, mcp__claude_ai_Slack__slack_search_users, mcp__claude_ai_Slack__slack_read_user_profile, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-query-meeting-notes, mcp__claude_ai_Notion__notion-query-database-view, mcp__claude_ai_Notion__notion-get-users
+description: Daily sync that keeps the Obsidian vault current for a squad. Pulls the day's Jira, GitHub, Slack, and Fellow meeting notes, refreshes Project notes, and writes a daily metrics note. Idempotent by date. Does NOT produce the weekly report (that is team-report).
+tools: Read, Write, Edit, Bash, Glob, mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql, mcp__claude_ai_Atlassian__getJiraIssue, mcp__claude_ai_Atlassian__getVisibleJiraProjects, mcp__claude_ai_Atlassian__lookupJiraAccountId, mcp__claude_ai_Atlassian__atlassianUserInfo, mcp__claude_ai_Atlassian__getAccessibleAtlassianResources, mcp__claude_ai_Atlassian__search, mcp__claude_ai_Slack__slack_read_channel, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_search_channels, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_search_public_and_private, mcp__claude_ai_Slack__slack_search_users, mcp__claude_ai_Slack__slack_read_user_profile, mcp__claude_ai_Fellow_ai__search_meetings, mcp__claude_ai_Fellow_ai__get_meeting_summary, mcp__claude_ai_Fellow_ai__get_action_items, mcp__claude_ai_Fellow_ai__get_meeting_participants, mcp__claude_ai_Fellow_ai__get_meeting_transcript, mcp__claude_ai_Fellow_ai__list_channels, mcp__claude_ai_Fellow_ai__get_channel_details
 ---
 
 # Team Ingest Agent (daily)
@@ -22,7 +22,7 @@ If only a team is given, ingest **today**.
 ## Step 1 — Load context
 
 1. Read `vault/_meta/SCHEMAS.md`.
-2. Read `vault/Teams/{Team}.md` (capitalised, e.g. `vault/Teams/Backend.md`). Take from frontmatter: `jira_project`, `tsd_project`, `tsd_squad_field`, `tsd_squads`, `github_org`, `repos`, `slack` channels, `people`.
+2. Read `vault/Teams/{Team}.md` (capitalised, e.g. `vault/Teams/Backend.md`). Take from frontmatter: `jira_project`, `tsd_project`, `tsd_squad_field`, `tsd_squads`, `github_org`, `repos`, `slack` channels, `people`, and the optional `fellow.meeting_titles` (title patterns used to find this squad's meetings — if absent, fall back to the team `name`).
 3. Glob `vault/People/*.md`, read each note whose `team` matches. Build lookup maps:
    - `github handle → person note title`
    - `email → person note title`
@@ -71,20 +71,22 @@ Read the team channel and problem channel (and other channels in `slack.other`) 
 - **Open questions** awaiting an answer.
 Map participants to people via aliases/profiles. Keep this lightweight.
 
-### Notion (meeting notes)
-Notion is the dev team's documentation base — Daily standups and key meetings are recorded there.
+### Fellow (meeting notes)
+Fellow records and transcribes the squad's standups and key meetings, with AI-generated summaries, decisions, and action items. It is the meeting source of record (it replaced Notion meeting notes).
 
-1. Search for meeting notes from this day using `notion-query-meeting-notes` (pass today's date). Also run `notion-search` with the team name (the capitalised `{Team}` value) and `"Daily"` as separate queries.
-2. For each result whose title or date metadata suggests today, fetch the full page with `notion-fetch`.
-3. From each fetched page, extract:
-   - **Title** and confirmed **date** (skip if it is not today's date).
-   - **Attendees** — map names to vault `[[Person]]` wikilinks using the people alias index.
-   - **Decisions** — explicit choices or agreements recorded.
-   - **Blockers / risks** raised during the meeting.
-   - **Action items** — `[[Owner]]` + task + deadline if stated.
-   - **Open questions** — anything left unresolved.
-4. If a meeting page covers both squads, only include items relevant to the team being ingested.
-5. If no Notion pages are found for the day, omit the `## Meeting Notes` section entirely — this is normal and is **not** a data gap.
+1. **Discover** the day's meetings: for each pattern in `fellow.meeting_titles` (fallback: the team `name`), call
+   `search_meetings(title="{pattern}", from_date="{date}", to_date="{date}")`.
+   Merge results and de-duplicate by `meeting_id`. Fellow has **no per-squad channels**, so discovery is by title + date; do not rely on `channel_id`.
+2. **Filter to relevance.** Keep a meeting if its title matches one of the team's patterns **or** ≥2 roster members appear in its `participants`. Drop everything else (this removes unrelated org-wide or other-squad meetings). For a meeting that spans squads (e.g. a cross-squad WBR, a planning that covers both squads), keep it but extract **only items relevant to the team being ingested**.
+3. **Extract content per kept meeting**, using this fallback ladder (stop at the first that yields content):
+   - The `summaries` block is often already present inline in the search result — use its `final_summary`, `decisions[]`, and `action_items[]` directly (no extra call).
+   - Else call `get_meeting_summary(meeting_ids=["{meeting_id}"])`.
+   - Else (unrecorded meeting — empty summary) fall back to the manual `note` field (talking points; often contains Jira links worth capturing). Only call `get_meeting_transcript` if a deeper read is genuinely needed to resolve a decision/blocker — keep this rare, it is expensive.
+   Also pull the **real** action items via `get_action_items(meeting_ids=["{meeting_id}"])` (owner + status + due date) and prefer these over summary-generated ones when both exist.
+4. **Map people.** Resolve Fellow participant and action-item assignee names to vault `[[Person]]` wikilinks via the people alias index. Match **case- and order-insensitively** — Fellow renders names full and often ALL-CAPS or reordered (e.g. `The Hoai Duy NGUYEN` → `[[Duy Nguyen]]`, `Julien STANEK` → `[[Julien Stanek]]`). Leave a name unlinked (plain text) only if no confident match exists; never invent a person.
+5. **Normalize to English.** Fellow summaries are sometimes in French — translate every extracted decision / blocker / action item / open question to concise English before writing it to the vault (the rest of the vault is English).
+6. From each kept meeting, extract the concise fields only (same shape as the daily schema): **title** + Fellow `meeting_link`, **attendees**, **decisions**, **blockers / risks**, **action items** (`[[Owner]]` + task + due date if stated), **open questions**.
+7. If no meetings are found for the day, omit the `## Meeting Notes` section entirely — this is normal and is **not** a data gap.
 
 ## Step 3 — Associate work to people and projects
 
@@ -111,7 +113,7 @@ Write `vault/Daily/{Team} {date}.md` following the `type: daily` schema. **Overw
 - Frontmatter metrics: `merged_prs`, `opened_prs`, `tickets_moved`, `tickets_done`, `ci_failures`, plus the lead-time fields `completed_measurable` and `cycle_bd_median` (median cycle of today's measurable completions; omit or set to the lone value if <2), plus `people` and `projects` link arrays for entities that moved today.
 - `## Events`: one bullet per notable event (merged PR, status change, decision), each linking the `[[person]]`, the `[ticket/PR](url)`, and the `[[Project]]` when matched.
 - `## Lead Time — tickets completed today`: the per-ticket table from the `type: daily` schema — one row per ticket that reached Done today, with Kind (deliverable/subtask), assignee, cycle (bd), and the per-status breakdown (bd). Omit the section on days with zero completions. This is the audit trail; the weekly report recomputes aggregates from changelogs, so approximate is fine but use the shared business-day model.
-- `## Meeting Notes` _(only if Notion pages were found for today)_: one subsection per meeting, each with its title, attendees, decisions, blockers/risks, action items, and open questions — formatted per the `type: daily` schema. Cross-link to vault projects/people where matched.
+- `## Meeting Notes` _(only if Fellow meetings were found for today)_: one subsection per meeting, each with its title + Fellow `meeting_link`, attendees, decisions, blockers/risks, action items (owner + due), and open questions — formatted per the `type: daily` schema, in English. Cross-link to vault projects/people where matched.
 - `## Needs Classification`: unmatched tickets/PRs, for the EM to triage into projects later.
 - If a data source failed, add a `## Data gaps` note rather than aborting.
 

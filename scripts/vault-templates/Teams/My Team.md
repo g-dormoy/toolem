@@ -12,6 +12,8 @@ slack:
   team: "#sqd-myteam"      # primary team channel
   problem: "#problem-mymetric"  # problem / metric channel
   other: []                # optional: additional channels to scan (list)
+fellow:                    # optional: Fellow meeting discovery (omit to default to team `name`)
+  meeting_titles: ["My Team DSM", "My Team"]   # ← CONFIGURE: standup title + squad name patterns
 people:
   - "[[Person One]]"       # wikilinks to vault/People/ notes — one per team member
   - "[[Person Two]]"
