@@ -41,6 +41,34 @@ Per-status **bottleneck** detail (which status ate the time) lives in each Snaps
 
 ---
 
+## Focus trend (per team)
+
+Share of each week's completed deliverables that served the team's stated goals (`focus_pct`), with the off-goal split — **reactive** (legitimate firefighting: support / bugs / hotfixes) vs **drift** (off-goal, unforced). Watch `drift_done` / `drift_bd` rising as the defocus signal.
+
+```dataview
+TABLE period_end AS "Week", focus_pct AS "Focus %", on_goal_done AS "On-goal", reactive_done AS "Reactive", drift_done AS "Drift", drift_bd AS "Drift (bd)"
+FROM "Snapshots"
+WHERE type = "snapshot" AND team = "your-team" AND focus_pct
+SORT period_end DESC
+```
+
+Per-goal verdicts (met / partial / missed) and the defocus detail live in each Snapshot's `## Weekly Goals & Focus` body section.
+
+---
+
+## This week's goals (per team)
+
+The goals currently set, newest week first. Closed goals carry their verdict in `status`; open ones show `planned` / `at-risk`.
+
+```dataview
+TABLE week_ending AS "Week", rank AS "#", status AS "Status", success AS "Success criterion", scored_by AS "Scored in"
+FROM "Goals"
+WHERE type = "goal" AND team = "your-team"
+SORT week_ending DESC, rank ASC
+```
+
+---
+
 ## Daily activity (last 14 days, per team)
 
 ```dataview

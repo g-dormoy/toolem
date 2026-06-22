@@ -1,6 +1,6 @@
 ---
 name: team-ingest
-description: Daily sync that keeps the Obsidian vault current for a squad. Pulls the day's Jira, GitHub, Slack, and Fellow meeting notes, refreshes Project notes, and writes a daily metrics note. Idempotent by date. Does NOT produce the weekly report (that is team-report).
+description: Daily sync that keeps the Obsidian vault current for a squad. Pulls the day's Jira, GitHub, Slack, and Fellow meeting notes, refreshes Project notes, tags completed work on-goal/reactive/drift against the week's goals, and writes a daily metrics note. Idempotent by date. Does NOT produce the weekly report (that is team-report).
 tools: Read, Write, Edit, Bash, Glob, mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql, mcp__claude_ai_Atlassian__getJiraIssue, mcp__claude_ai_Atlassian__getVisibleJiraProjects, mcp__claude_ai_Atlassian__lookupJiraAccountId, mcp__claude_ai_Atlassian__atlassianUserInfo, mcp__claude_ai_Atlassian__getAccessibleAtlassianResources, mcp__claude_ai_Atlassian__search, mcp__claude_ai_Slack__slack_read_channel, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_search_channels, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_search_public_and_private, mcp__claude_ai_Slack__slack_search_users, mcp__claude_ai_Slack__slack_read_user_profile, mcp__claude_ai_Fellow_ai__search_meetings, mcp__claude_ai_Fellow_ai__get_meeting_summary, mcp__claude_ai_Fellow_ai__get_action_items, mcp__claude_ai_Fellow_ai__get_meeting_participants, mcp__claude_ai_Fellow_ai__get_meeting_transcript, mcp__claude_ai_Fellow_ai__list_channels, mcp__claude_ai_Fellow_ai__get_channel_details
 ---
 
@@ -32,6 +32,7 @@ If only a team is given, ingest **today**.
 5. Glob `vault/Projects/*.md`, read each note whose `team` matches. Build:
    - `jira_key → project note title` (from each project's `jira_keys`)
    - a name/tag index (project title words + `tags`) for fuzzy matching.
+6. Glob `vault/Goals/{Team} *.md`, read each **open** goal whose `week_ending` is the Friday of the week containing `{date}` and whose `status` is not terminal (`met`/`partial`/`missed`/`dropped`). Build the **on-goal set** = the union of those goals' `projects` (note titles) and `jira_keys`, plus the list of open goal note titles (for the daily `goals:` link array). If there are no open goals for the week, the on-goal set is empty — every completion is then off-goal, and you still tag it reactive vs drift.
 
 ## Step 2 — Collect the day's activity (read-only)
 
@@ -93,6 +94,11 @@ Fellow records and transcribes the squad's standups and key meetings, with AI-ge
 - Map every ticket/PR to a **person** via the lookup maps.
 - Map every ticket/PR to a **project**: first by `jira_key ∈ project.jira_keys`; else by fuzzy match of the ticket/PR title against the project name/tag index (only accept confident matches).
 - Anything that matches no project is **unclassified** — do not invent a project.
+- **Tag focus** for each ticket that **reached Done today** that is a **deliverable** (Story/Task/Bug; skip subtasks and Epics), per the **Focus model** in `SCHEMAS.md`, with precedence **on-goal > reactive > drift**:
+  - **on-goal** — its matched project is in the on-goal set, or its key is in a goal's `jira_keys`.
+  - **reactive** — not on-goal, and it is from the TSD support desk, or `issuetype = Bug`, or carries a hotfix/incident label.
+  - **drift** — not on-goal and not reactive.
+  Count `on_goal_done`, `reactive_done`, `drift_done`. Record which open goals had on-goal completions today (for the daily `goals:` array).
 
 ## Step 4 — Write to the vault (idempotent by date)
 
@@ -110,8 +116,8 @@ For each project that had activity today, use `Edit` to:
 
 ### Daily note
 Write `vault/Daily/{Team} {date}.md` following the `type: daily` schema. **Overwrite** if it already exists. Include:
-- Frontmatter metrics: `merged_prs`, `opened_prs`, `tickets_moved`, `tickets_done`, `ci_failures`, plus the lead-time fields `completed_measurable` and `cycle_bd_median` (median cycle of today's measurable completions; omit or set to the lone value if <2), plus `people` and `projects` link arrays for entities that moved today.
-- `## Events`: one bullet per notable event (merged PR, status change, decision), each linking the `[[person]]`, the `[ticket/PR](url)`, and the `[[Project]]` when matched.
+- Frontmatter metrics: `merged_prs`, `opened_prs`, `tickets_moved`, `tickets_done`, `ci_failures`, plus the lead-time fields `completed_measurable` and `cycle_bd_median` (median cycle of today's measurable completions; omit or set to the lone value if <2), the focus counts `on_goal_done` / `reactive_done` / `drift_done` (from Step 3; omit all three if no deliverables completed today), plus `people` and `projects` link arrays, and a `goals:` link array of open goals today's work served (omit if empty).
+- `## Events`: one bullet per notable event (merged PR, status change, decision), each linking the `[[person]]`, the `[ticket/PR](url)`, and the `[[Project]]` when matched. For a completed deliverable that is **off-goal**, append a trailing focus tag — `· reactive` or `· drift` — per Step 3; leave on-goal lines untagged.
 - `## Lead Time — tickets completed today`: the per-ticket table from the `type: daily` schema — one row per ticket that reached Done today, with Kind (deliverable/subtask), assignee, cycle (bd), and the per-status breakdown (bd). Omit the section on days with zero completions. This is the audit trail; the weekly report recomputes aggregates from changelogs, so approximate is fine but use the shared business-day model.
 - `## Meeting Notes` _(only if Fellow meetings were found for today)_: one subsection per meeting, each with its title + Fellow `meeting_link`, attendees, decisions, blockers/risks, action items (owner + due), and open questions — formatted per the `type: daily` schema, in English. Cross-link to vault projects/people where matched.
 - `## Needs Classification`: unmatched tickets/PRs, for the EM to triage into projects later.

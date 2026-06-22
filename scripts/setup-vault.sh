@@ -52,6 +52,7 @@ mkdir -p \
   "$VAULT/Snapshots" \
   "$VAULT/1on1s" \
   "$VAULT/Observations" \
+  "$VAULT/Goals" \
   "$VAULT/.logs" \
   "$VAULT/.obsidian"
 

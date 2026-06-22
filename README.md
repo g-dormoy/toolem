@@ -58,6 +58,7 @@ See `vault/_meta/SCHEMAS.md` for the full schema, including the `vault/People/` 
 The vault is a **living database of entities** — People, Projects, Teams — not a folder of documents. Two scheduled processes keep it current; a third reads it on demand.
 
 ```
+Start of the week (on demand)    →  /goal <team> <goal of the week>
 Every weekday (or on demand)     →  /team-ingest <team>
 Every Friday afternoon           →  /team-report <team>
 Before a 1:1 (on demand)        →  /team-1on1 "<person>"
@@ -79,6 +80,7 @@ Data flows one way: **Jira / GitHub / Slack → vault → reports**. Nothing is 
 | `vault/Snapshots/` | One note per team per week — full readable report + weekly metrics | `team-report` (weekly) |
 | `vault/1on1s/` | One brief per person per 1:1 | `team-1on1` (on demand) |
 | `vault/Observations/` | Manager attention points, auto-closed by next weekly report | `/note` (you) |
+| `vault/Goals/` | One note per weekly team goal, scored + auto-closed by next weekly report | `/goal` (you) |
 | `vault/_meta/` | Schema contract (`SCHEMAS.md`) and Dataview query templates | You |
 
 ---
@@ -102,6 +104,7 @@ Pulls today's Jira, GitHub, and Slack activity for a squad. Refreshes Project no
 - Scans team Slack channels lightly for blockers, decisions, and open questions (not a full summary)
 - Maps every ticket and PR to the right person and project
 - Computes cycle time (In Progress → Done, business days) for any tickets completed today
+- Tags each completed deliverable **on-goal / reactive / drift** against the week's `/goal` notes (focus tracking)
 - Updates matched Project notes (status, risks, activity log line)
 - Writes the Daily note with metrics frontmatter (for Dataview) and a `## Needs Classification` section for unmatched work
 
@@ -124,6 +127,7 @@ Aggregates the week's Daily notes into a full readable Snapshot and updates each
 - Executive summary (5 bullets, 30-second read)
 - Jira: status breakdown, new/completed tickets, velocity trend (week-on-week), blockers
 - Lead time & bottlenecks: median + p85 cycle time (business days), per-status dwell breakdown, WoW trend
+- Weekly Goals & Focus: each `/goal` scored (met / partial / missed), plus the focus ratio — share of delivery that was on-goal vs reactive (firefighting) vs drift (off-goal, unforced) — with WoW trend
 - GitHub: open PRs (with age + review status), merged PRs, PR turnaround averages, CI failures
 - Slack: key discussions and unresolved threads per channel
 - Project status summaries with links
@@ -176,6 +180,22 @@ Parameters inferred from natural language: team, observation text, any project n
 
 ---
 
+### `/goal` — set the week's goals
+
+Capture a weekly team goal so the week's work can be tracked against it. The goal lands in `vault/Goals/` with `status: planned`; `team-ingest` then tags each day's completed work **on-goal / reactive / drift** against it, and Friday's `team-report` scores the goal (met / partial / missed), computes the team's **focus ratio**, and closes it.
+
+```
+/goal poseidon Ship Payment Dashboard iteration 2 — filters + pagination live behind FF, covers Payment Dashboard, top priority
+/goal growth Land the PayPal integration POC, success = sandbox payment round-trips end to end
+/goal backend Cut onboarding drop-off, rank 2, covers MyNetwork Simplification
+```
+
+Parameters inferred from natural language: team, goal title, success criterion, any project names (the on-goal set, auto-linked as `[[wikilinks]]`), optional ticket keys and `rank`. Defaults to the current week (Mon–Fri); set goals at the start of the week.
+
+**Focus model** — each completed deliverable is one of: **on-goal** (its project/ticket is in a goal), **reactive** (off-goal but legitimate: support, bugs, hotfixes), or **drift** (off-goal and unforced — the real defocus signal). Precedence is on-goal > reactive > drift. The Snapshot reports `focus_pct` and the drift detail so you can validate focus and see exactly what pulled the team off.
+
+---
+
 ## Automation (optional — macOS launchd)
 
 The `scripts/` folder contains shell scripts and launchd plists to run the daily ingest and weekly report automatically.
@@ -204,10 +224,13 @@ See `scripts/README.md` for full details.
 ## Typical weekly flow
 
 ```
+Monday     /goal backend <goal of the week>    # set the week's focus
+Monday     /goal growth <goal of the week>
+
 Mon–Thu    /team-ingest backend     # keep the vault fresh each day
 Mon–Thu    /team-ingest growth
 
-Friday PM  /team-report backend     # weekly Snapshot + People logs
+Friday PM  /team-report backend     # weekly Snapshot + goal scoring + People logs
 Friday PM  /team-report growth
 
 Anytime    /note <team> <observation>          # flag something for the report

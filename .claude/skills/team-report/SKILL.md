@@ -1,6 +1,6 @@
 ---
 name: team-report
-description: Weekly team report for a squad, generated from the Obsidian vault. Aggregates the week's daily notes into a full readable Snapshot with metrics, and updates each person's activity log. Use for "weekly report", "team report", "Friday report".
+description: Weekly team report for a squad, generated from the Obsidian vault. Aggregates the week's daily notes into a full readable Snapshot with metrics, scores the week's goals and the team's focus ratio, and updates each person's activity log. Use for "weekly report", "team report", "Friday report".
 ---
 
 # Team Report (weekly)
@@ -39,7 +39,9 @@ Follow .claude/agents/team-report.md exactly:
 2. Read the week's vault/Daily/{Team} *.md notes; aggregate metrics + events
 3. Confirm with targeted Jira/GitHub queries; Slack weekly highlights
 4. Compute week-on-week delta from the prior Snapshot frontmatter
-5. Write vault/Snapshots/{Team} {week_end}.md (full report + metrics frontmatter)
-6. Append one weekly line to each active person's People activity log
-7. Print a summary
+5. Load this week's Goals; score each + compute the focus ratio (on-goal/reactive/drift) from the completed-this-week deliverables
+6. Write vault/Snapshots/{Team} {week_end}.md (full report + metrics frontmatter, incl. ## Weekly Goals & Focus)
+7. Close consumed observations and close+score this week's goals
+8. Append one weekly line to each active person's People activity log
+9. Print a summary
 ```

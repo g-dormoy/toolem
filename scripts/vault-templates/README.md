@@ -14,12 +14,14 @@ This is the Obsidian vault for the team tracking system. It is a living database
 | `Snapshots/` | `team-report` | One note per team per week — full readable report + metrics |
 | `1on1s/` | `team-1on1` | One brief per person per 1:1 |
 | `Observations/` | `/note` skill | Manager attention points, auto-closed by the next weekly report |
+| `Goals/` | `/goal` skill | One note per weekly team goal — scored + auto-closed by the next weekly report |
 
 ## Commands (run from a Claude Code session at the repo root)
 
 ```
+/goal <team> <goal>         # set the week's goal — run at the start of the week
 /team-ingest <team>         # daily vault sync — run Mon–Thu
-/team-report <team>         # weekly snapshot — run Friday afternoon
+/team-report <team>         # weekly snapshot + goal scoring — run Friday afternoon
 /team-1on1 "<name>"         # 1:1 prep brief — run before a 1:1
 /note <team> <observation>  # flag something for the next report
 ```

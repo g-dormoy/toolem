@@ -1,6 +1,6 @@
 ---
 name: team-ingest
-description: Daily vault sync for a squad — pulls the day's Jira, GitHub, Slack, and Fellow meeting notes, refreshes Project notes, and writes a daily metrics note to the Obsidian vault. Use for "daily sync", "ingest today", "update the vault".
+description: Daily vault sync for a squad — pulls the day's Jira, GitHub, Slack, and Fellow meeting notes, refreshes Project notes, tags completed work on-goal/reactive/drift against the week's goals, and writes a daily metrics note to the Obsidian vault. Use for "daily sync", "ingest today", "update the vault".
 ---
 
 # Team Ingest (daily)
@@ -34,9 +34,9 @@ Today's date: {current date YYYY-MM-DD}
 
 Follow .claude/agents/team-ingest.md exactly:
 1. Read vault/_meta/SCHEMAS.md and vault/Teams/{Team}.md
-2. Load People and Projects notes for the team; resolve missing jira_account_id
+2. Load People, Projects, and this week's open Goals for the team; resolve missing jira_account_id
 3. Collect the day's Jira / GitHub / Slack activity and Fellow meeting notes
-4. Associate work to people and projects
-5. Update matched Project notes and write vault/Daily/{Team} {date}.md (idempotent by date)
+4. Associate work to people and projects; tag completed deliverables on-goal/reactive/drift vs the week's goals
+5. Update matched Project notes and write vault/Daily/{Team} {date}.md with focus counts (idempotent by date)
 6. Print a summary of what changed
 ```

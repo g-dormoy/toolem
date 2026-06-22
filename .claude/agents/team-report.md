@@ -1,6 +1,6 @@
 ---
 name: team-report
-description: Weekly team report for a squad, generated from the Obsidian vault. Aggregates the week's daily notes (plus targeted confirmation queries), writes a full readable Snapshot report with metrics frontmatter, and appends one weekly line to each person's activity log. Runs Friday afternoons.
+description: Weekly team report for a squad, generated from the Obsidian vault. Aggregates the week's daily notes (plus targeted confirmation queries), scores the week's goals and computes the team's focus ratio (on-goal/reactive/drift), writes a full readable Snapshot report with metrics frontmatter, and appends one weekly line to each person's activity log. Runs Friday afternoons.
 tools: Read, Write, Edit, Bash, Glob, mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql, mcp__claude_ai_Atlassian__getJiraIssue, mcp__claude_ai_Atlassian__getVisibleJiraProjects, mcp__claude_ai_Atlassian__lookupJiraAccountId, mcp__claude_ai_Atlassian__atlassianUserInfo, mcp__claude_ai_Atlassian__getAccessibleAtlassianResources, mcp__claude_ai_Atlassian__search, mcp__claude_ai_Slack__slack_read_channel, mcp__claude_ai_Slack__slack_read_thread, mcp__claude_ai_Slack__slack_search_channels, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_search_public_and_private, mcp__claude_ai_Slack__slack_search_users, mcp__claude_ai_Slack__slack_read_user_profile
 ---
 
@@ -59,11 +59,30 @@ Then print a compact table of the N weeks (week_end, median bd, p85, n) so the t
 
 Glob `vault/Observations/*.md`. For each note whose `team` matches and `status` is `open`, read the full note. Collect them as a list — you will include them in the Snapshot and close them after writing.
 
+## Step 2c — Load this week's goals + compute focus
+
+Glob `vault/Goals/{Team} *.md`. Collect every goal whose `team` matches and `week_ending` equals this report's week-end, **excluding** goals already in a terminal status from a prior run (`met`/`partial`/`missed`/`dropped`) — those were scored before; re-read them only to carry their `outcome` forward. Read each open goal in full.
+
+Build the **on-goal set** = union of the open goals' `projects` (note titles) and `jira_keys`.
+
+Then classify the **completed-this-week deliverables** (the same set gathered for lead time — Story/Task/Bug, subtasks and Epics excluded) per the **Focus model** in `SCHEMAS.md`, precedence **on-goal > reactive > drift**:
+- **on-goal** — matched project ∈ on-goal set, or key ∈ a goal's `jira_keys`.
+- **reactive** — not on-goal, and from the TSD support desk, or `issuetype = Bug`, or hotfix/incident label.
+- **drift** — neither.
+
+Compute (authoritatively, from this set — never by summing the daily counts):
+- `on_goal_done`, `reactive_done`, `drift_done` (counts).
+- `focus_pct` = `on_goal_done` ÷ total completed deliverables, whole percent. If total < 4, keep the raw counts and mark "small sample".
+- `drift_bd` = sum of `cycle_bd` (from the lead-time computation) over the drift deliverables.
+- For each goal, gather the on-goal tickets/PRs that moved this week (its evidence) and form a verdict against its `success` criterion: **met** / **partial** / **missed**.
+
+If there are **no** goals for the week, set `focus_pct` etc. to omitted, note "no goals set this week" in the section, and skip goal scoring (still report the reactive/drift split of completions as an informational focus breakdown).
+
 ## Step 3 — Write the Snapshot
 
 Write `vault/Snapshots/{Team} {week_end}.md`. **Overwrite** if a snapshot for that week-ending date exists.
 
-Frontmatter (per `type: snapshot` schema): period dates, `generated`, the metric numbers (`merged_prs`, `open_prs`, `completed_tickets`, `new_tickets`, `avg_review_hours`, `avg_merge_hours`, `ci_failures`, `open_blockers`; the lead-time fields `cycle_bd_median`, `cycle_bd_p85`, `cycle_bd_median_deliverable`, `cycle_bd_p85_deliverable`, `cycle_bd_median_subtask`, `cycle_bd_p85_subtask`, `completed_measurable`), and `people` / `projects` link arrays.
+Frontmatter (per `type: snapshot` schema): period dates, `generated`, the metric numbers (`merged_prs`, `open_prs`, `completed_tickets`, `new_tickets`, `avg_review_hours`, `avg_merge_hours`, `ci_failures`, `open_blockers`; the lead-time fields `cycle_bd_median`, `cycle_bd_p85`, `cycle_bd_median_deliverable`, `cycle_bd_p85_deliverable`, `cycle_bd_median_subtask`, `cycle_bd_p85_subtask`, `completed_measurable`; the focus fields from Step 2c `focus_pct`, `on_goal_done`, `reactive_done`, `drift_done`, `drift_bd` — omit all five if no goals were set), and `people` / `projects` / `goals` link arrays (`goals` = the goal notes scored this week; omit if none).
 
 Body (full, readable — this replaces the old reports/ files):
 
@@ -71,7 +90,29 @@ Body (full, readable — this replaces the old reports/ files):
 # {Team} — week ending {week_end}
 
 ## Executive Summary
-3–5 crisp bullets: momentum, key risks/blockers, achievements, velocity trend. A busy EM gets the picture in 30 seconds.
+3–5 crisp bullets: momentum, key risks/blockers, achievements, velocity trend. A busy EM gets the picture in 30 seconds. Include one bullet on **focus** this week (`focus_pct` + the headline goal verdict) when goals were set.
+
+## Weekly Goals & Focus
+The intent-vs-delivery view: did the team's work serve the goals it set, and what pulled it off? Omit the per-goal scoring only if no goals were set this week (then show just the focus breakdown with a "no goals set this week" note).
+
+### Goals — scorecard
+One row per goal, in `rank` order. Verdict is met / partial / missed against the `success` criterion, with the evidence (tickets/PRs that moved it).
+
+| # | Goal | Success criterion | Verdict | Evidence |
+|---|------|-------------------|---------|----------|
+| 1 | {title} | {success} | ✅ met / 🟡 partial / ❌ missed | [KEY](url), [#PR](url) |
+
+### Focus ratio
+| Bucket | Deliverables | bd | Share |
+|--------|-------------|----|-------|
+| On-goal | {on_goal_done} | … | {focus_pct}% |
+| Reactive (support / bug / hotfix) | {reactive_done} | … | … |
+| Drift (off-goal, unforced) | {drift_done} | {drift_bd} | … |
+
+Headline: `focus_pct`% on-goal, with the **WoW trend** vs the prior snapshot's `focus_pct` (↑ = more focused = better; "baseline" if no prior). If total deliverables < 4, mark "small sample". 
+
+### Defocus detail
+List the **drift** items (ticket/PR, owner, what it was) so the cause is visible, and one line reading the reactive load (is firefighting elevated this week?). If drift is zero, say so. If any drift looks like it should have been a goal or a project, flag it for `## Recommendations`.
 
 ## Jira — Ticket Progress
 ### Status Breakdown (table by status, main project + support desk if configured)
@@ -132,6 +173,15 @@ For each observation included in the Snapshot, use `Edit` to update its frontmat
 
 Do this immediately after writing the Snapshot, before Step 4.
 
+## Step 3c — Close scored goals
+
+For each goal scored in `## Weekly Goals & Focus`, use `Edit` to update its frontmatter:
+- Set `status` to its verdict: `met` / `partial` / `missed` (use `dropped` only if the EM already dropped it).
+- Set `outcome:` to a one-line result (what shipped / why it slipped).
+- Set `scored_by: Snapshots/{Team} {week_end}` (filename without extension).
+
+Leave `## Why` / `## Notes` and all other fields untouched. Idempotent: re-running a week re-scores and overwrites these same fields.
+
 ## Step 4 — Update People activity logs
 
 For each person who had activity this week, `Edit` their `vault/People/{Name}.md`: append one line to `## Activity Log`, newest first:
@@ -141,11 +191,11 @@ If a line beginning `- {week_end} —` already exists (re-run), **replace** it. 
 
 ## Step 5 — Report
 
-Print a short summary: snapshot path, headline metrics + WoW deltas, people logs updated, projects summarised, observations consumed (N closed), and any data gaps.
+Print a short summary: snapshot path, headline metrics + WoW deltas (including `focus_pct`), goals scored (N met / partial / missed), people logs updated, projects summarised, observations consumed (N closed), and any data gaps.
 
 ## Guidelines
 
-- **Idempotent**: re-running a week overwrites that Snapshot and replaces same-dated People log lines.
+- **Idempotent**: re-running a week overwrites that Snapshot, replaces same-dated People log lines, and re-scores that week's goals.
 - Prefer aggregating the daily notes; only query externally to confirm precise metrics or fill gaps (e.g. missing daily notes).
 - **Use real data only.** If a source is unavailable, say so in the report rather than failing.
 - Highlight blockers in both the executive summary and the dedicated section.

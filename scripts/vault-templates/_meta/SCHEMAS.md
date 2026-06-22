@@ -21,9 +21,10 @@ If your Jira workflow uses the default status names (`In Progress`, `Done`), you
 
 > **Agent contract — do not rename these:**
 > - All field names (`type`, `name`, `team`, `status`, `merged_prs`, `cycle_bd_median`, …)
-> - All `type:` values: `team`, `person`, `project`, `daily`, `snapshot`, `oneonone`, `observation`, `decision`
+> - All `type:` values: `team`, `person`, `project`, `daily`, `snapshot`, `oneonone`, `observation`, `goal`, `decision`
 > - All project `status:` values: `planned`, `in-progress`, `blocked`, `shipped`, `dropped`, `unknown`
-> - Vault folder names (`Teams/`, `People/`, `Daily/`, `Snapshots/`, …)
+> - All goal `status:` values: `planned`, `on-track`, `at-risk`, `met`, `partial`, `missed`, `dropped`
+> - Vault folder names (`Teams/`, `People/`, `Daily/`, `Snapshots/`, `Goals/`, …)
 >
 > The agents read these field names and values literally. Changing them breaks ingestion and reporting silently.
 
@@ -165,13 +166,20 @@ ci_failures: 0
 # --- lead time (business days, In Progress → Done; see "Lead time & cycle time") ---
 completed_measurable: 2   # of tickets_done, how many entered In Progress (have a cycle time)
 cycle_bd_median: 3.4      # median In Progress→Done of today's completions (noisy at small N — for the day log only; weekly report recomputes authoritatively)
+# --- focus (on-goal / reactive / drift split of today's completed deliverables; see "Focus model") ---
+on_goal_done: 1           # deliverables completed today that served an open weekly goal
+reactive_done: 1          # off-goal but legitimate-unplanned (support desk / Bug / hotfix)
+drift_done: 0             # off-goal and not reactive — the defocus signal
 # --- entity links (who/what moved today) ---
 people: ["[[Person One]]"]
 projects: ["[[Your Project]]"]
+goals: ["[[Goals/Your Team YYYY-MM-DD short-title]]"]   # open goals today's work touched (omit if none)
 ---
 ## Events
 - [[Person One]] merged [#101](url) — brief description → [[Your Project]]
 - [ENG-001](url) moved In Progress → Done ([[Person One]]) → [[Your Project]]
+- [ENG-050](url) hot-fix shipped ([[Person One]]) → [[Your Project]] · reactive
+- [ENG-051](url) moved → Done ([[Person One]]) — off-roadmap cleanup · drift
 
 ## Lead Time — tickets completed today
 One row per ticket that reached Done today. `Kind` = deliverable (Story/Task/Bug) or subtask. `Cycle` = In Progress→Done in business days. `Breakdown` = business-days per status the ticket sat in (bottleneck-spotting). "—" cycle = never entered In Progress.
@@ -196,6 +204,8 @@ _Omit this section entirely if no Fellow meetings were found for today. Findings
 ```
 
 Filename: `Daily/{Team} {date}.md` (e.g. `Daily/Your Team YYYY-MM-DD.md`). **Idempotent by date** — re-running a day overwrites that note. Work that matches no project is listed under `## Needs Classification` for you to triage (ingest never auto-creates projects). The `## Lead Time` table is the per-ticket audit trail; the **weekly report and 1:1 recompute lead-time aggregates directly from changelogs** for the window (medians of a week are not averages of daily medians), so they never depend on parsing this table.
+
+In `## Events`, completed work that is **off-goal** carries a trailing focus tag — `· reactive` or `· drift` per the **Focus model** below; on-goal lines are left untagged. The `on_goal_done` / `reactive_done` / `drift_done` counts are the day's audit trail; the weekly report recomputes the authoritative figures from the completed-this-week set.
 
 ---
 
@@ -227,9 +237,16 @@ cycle_bd_p85_deliverable: 12.0
 cycle_bd_median_subtask: 2.1       # Sub-task only
 cycle_bd_p85_subtask: 5.0
 completed_measurable: 12      # tickets with a measurable cycle (entered In Progress)
+# --- focus (share of completed deliverables that served the week's goals; see "Focus model") ---
+focus_pct: 71                 # on-goal deliverables / all completed deliverables, whole percent
+on_goal_done: 10              # completed deliverables that served an open goal
+reactive_done: 3              # off-goal but legitimate-unplanned (support / Bug / hotfix)
+drift_done: 1                 # off-goal and not reactive
+drift_bd: 2.4                 # business-days of cycle time spent on drift items
 # --- entity links ---
 people: ["[[Person One]]"]
 projects: ["[[Your Project]]"]
+goals: ["[[Goals/Your Team YYYY-MM-DD short-title]]"]   # goals scored this week (omit if none set)
 ---
 # Your Team — week ending YYYY-MM-DD
 
@@ -307,6 +324,62 @@ One paragraph describing the observation.
 Filename: `Observations/{date}-{team}-{slug}.md` (e.g. `Observations/YYYY-MM-DD-your-team-short-title.md`).
 
 `team-report` globs all `status: open` observations for the team, includes them under `## Manager Attention Points` in the Snapshot, then sets `status: picked_up` and `picked_up_by: Snapshots/{Team} {week_end}`.
+
+---
+
+## `type: goal`
+
+A **weekly team goal** — the intent the EM sets at the start of the week, scored at the end. Created by hand (via `/goal`) on Monday; **closed by `team-report` on Friday** (`status` → `met`/`partial`/`missed`, `outcome` and `scored_by` set). Same create-by-hand / close-by-report lifecycle as `observation`, bookended to the week.
+
+```yaml
+---
+type: goal
+team: your-team
+week_start: YYYY-MM-DD        # Monday of the goal week
+week_ending: YYYY-MM-DD       # Friday — JOIN KEY to that week's Snapshot
+title: Ship the X feature
+rank: 1                       # priority order; 1 = top
+projects: ["[[Your Project]]"]   # the work that serves this goal (defines the on-goal set)
+jira_keys: [ENG-001]             # optional — flag specific tickets beyond the projects
+success: "What 'done' looks like for this goal"
+status: planned               # planned | on-track | at-risk | met | partial | missed | dropped
+outcome:                      # one line, set by team-report on Friday
+scored_by:                    # set by team-report: "Snapshots/Your Team YYYY-MM-DD"
+---
+## Why
+One or two lines: why this is the priority this week.
+
+## Notes
+Optional running notes. The EM may set `status: at-risk` by hand mid-week.
+```
+
+Filename: `Goals/{Team} {week_ending} {slug}.md` (e.g. `Goals/Your Team YYYY-MM-DD ship-the-x-feature.md`). **Idempotent by filename** — re-running `/goal` for the same title + week overwrites that goal.
+
+`week_ending` is the join key: `team-report` for the week ending W loads every goal whose `week_ending == W`. A goal is **open** for that week when its `status` is not terminal (`met`/`partial`/`missed`/`dropped`). `team-report` globs open goals for its week (as it does observations), scores each against the week's delivery, includes them under `## Weekly Goals & Focus`, then closes them. `team-ingest` reads open goals to tag daily work but **never** writes goal notes.
+
+---
+
+## Focus model — on-goal / reactive / drift
+
+The one shared contract for "is the team focused on the week's goals?" `team-ingest` (daily tagging) and `team-report` (weekly scoring) classify completed work the same way, against the week's **open `goal` notes** (see `type: goal`).
+
+**Build the on-goal set** from the union of every open goal's `projects` (wikilinks) and `jira_keys`. Then each completed **deliverable** is exactly one of:
+
+- **on-goal** — its matched project is in the on-goal project set, **or** its key is in a goal's `jira_keys`.
+- **reactive** — *not* on-goal, **and** legitimate-unplanned: it came from the support desk (`tsd_project`), **or** its `issuetype` is `Bug`, **or** it carries a hotfix/incident label. Expected baseline firefighting, not a focus failure.
+- **drift** — *not* on-goal **and** *not* reactive. The real defocus signal: work that was neither planned nor forced.
+
+**Precedence is on-goal > reactive > drift.** A Bug or support ticket whose project is goal-linked is **on-goal**, not reactive — goal membership always wins.
+
+**The unit** is the **deliverable** — the same Story/Task/Bug lens as the lead-time model (subtasks and Epics excluded). Classify the deliverables **completed in the window** (`status changed to Done DURING (since, until)`), the same set the lead-time model uses.
+
+**The metrics:**
+- `focus_pct` = on-goal deliverables ÷ all completed deliverables, as a whole-number percent. With fewer than ~4 completed deliverables, report the raw counts and mark "small sample".
+- Report each bucket **count** (`on_goal_done` / `reactive_done` / `drift_done`) and a **bd-weighted** view using each ticket's `cycle_bd`: `drift_bd` = total business-days of cycle time spent on drift items.
+
+**Trend.** `team-report` diffs the window's `focus_pct` against the prior `Snapshot`'s (↑ = more on-goal = improvement). If no prior, say "baseline".
+
+**Daily vs weekly.** `team-ingest` tags each day's completions and stores per-bucket counts in the `daily` note for the audit trail; `team-report` recomputes the authoritative weekly figures directly from the completed-this-week set — never by summing daily counts — exactly as it does for lead time.
 
 ---
 
